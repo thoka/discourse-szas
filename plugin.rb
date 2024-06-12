@@ -72,6 +72,16 @@ after_initialize do
   end
 
   module DedupCSS
+    def dedup_style(style)
+      style_instructions =
+        style.split(";").map(&:strip).select(&:present?).map { |s| s.split(":", 2).map(&:strip) }
+      styles = {}
+      style_instructions.each { |key, value| styles[key] = value }
+      styles.map { |k, v| "#{k}:#{v}" }.join(";")
+    rescue StandardError
+      style
+    end
+
     def dedup_styles
       @fragment.css("[style]").each { |element| element["style"] = dedup_style element["style"] }
     end
@@ -89,7 +99,7 @@ after_initialize do
   end
 
   reloadable_patch do |plugin|
-    UserNotifications.class_eval { prepend MailPrefixShortener::BuildEmailHelperExtension }
+    UserNotifications.prepend MailPrefixShortener::BuildEmailHelperExtension
     Discourse.singleton_class.prepend FixLocalhostSitename
     Oneboxer.singleton_class.prepend AllowPublishingOfPrivateTopics
     Email::Styles.prepend DedupCSS
