@@ -1,9 +1,52 @@
 # name: discourse-szas
 # about: collection of tweaks for szas.org
-# version: 0.0.2
+# version: 0.0.3
 # authors: Thomas Kalka
 # url: https://github.com/thoka/discourse-szas
 # frozen_string_literal: true
+
+require "onebox"
+
+class Onebox::Engine::VimeoOnebox
+  private
+
+  def oembed_data
+    return @oembed_data if @oembed_data
+    response = Onebox::Helpers.fetch_response("https://vimeo.com/api/oembed.json?url=#{url}")
+    @oembed_data = ::MultiJson.load(response, symbolize_keys: true)
+  rescue StandardError
+    "{}"
+  end
+
+  def og_data
+    return @og_data if @og_data
+
+    auth_key = SiteSetting.vimeo_api_token
+
+    if auth_key.present?
+      begin
+        response =
+          Onebox::Helpers.fetch_response(
+            "https://api.vimeo.com/videos/#{oembed_data[:video_id]}",
+            headers: {
+              "authorization" => "Bearer #{auth_key}",
+            },
+          )
+        video = ::MultiJson.load(response, symbolize_keys: true)
+        @og_data =
+          OpenStruct.new(
+            title: video[:name],
+            description: video[:description],
+            image: video[:pictures][:sizes].last[:link],
+          )
+      rescue StandardError => e
+        puts("🔴vimeo api call failed", e)
+      end
+    end
+
+    @og_data ||= get_opengraph
+  end
+end
 
 after_initialize do
   # enabled_site_setting :szasAdaptions_enabled
@@ -102,6 +145,8 @@ after_initialize do
     UserNotifications.prepend MailPrefixShortener::BuildEmailHelperExtension
     Discourse.singleton_class.prepend FixLocalhostSitename
     Oneboxer.singleton_class.prepend AllowPublishingOfPrivateTopics
+    Oneboxer.singleton_class.prepend AllowPublishingOfPrivateTopics
+
     Email::Styles.prepend DedupCSS
   end
 end

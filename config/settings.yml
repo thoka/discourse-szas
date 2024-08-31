@@ -1,0 +1,4 @@
+plugins:
+  vimeo_api_token:
+    default: ''
+    
