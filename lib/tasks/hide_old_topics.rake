@@ -75,20 +75,21 @@ namespace :szas do
         live_to = date_cutoff
 
         if (topic_tags & excluded_tags).any?
-          puts "Thema '#{topic.title}' (ID: #{topic.id}/#{top_category.id}) hat einen ausgeschlossenen Tag und wird übersprungen."
-
           for tag in excluded_tags
             if topic_tags.include? tag
-              live_to = Date.today - 1.month if tag.ends_with?(":Monat")
-              live_to = date_cutoff - 1.year if tag.ends_with?(":Jahr")
-              live_to = Date.today - 100.years if tag.ends_with?(":immer")
+              live_to = topic.changed_at + 1.month if tag.ends_with?(":Monat")
+              live_to = topic.changed_at + 1.year if tag.ends_with?(":Jahr")
+              live_to = Date.today + 10.years if tag.ends_with?(":immer")
             end
           end
         end
 
-        if live_to && topic.created_at >= live_to
-          # TODO: das sollte ein Fehler sein, da es oben durch die Abfrage ausgeschlossen wurde
+        if live_to && Date.today < live_to
           puts "   ... hat Ablaufdatum (#{live_to}) nicht erreicht."
+          if (!topic.visible || topic.archived)
+            puts "  ! ... wird wieder gezeigt"
+            topic.update!(visible: true, archived: false)
+          end
           next
         end
 
