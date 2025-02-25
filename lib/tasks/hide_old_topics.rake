@@ -77,8 +77,8 @@ namespace :szas do
         if (topic_tags & excluded_tags).any?
           for tag in excluded_tags
             if topic_tags.include? tag
-              live_to = topic.changed_at + 1.month if tag.ends_with?(":Monat")
-              live_to = topic.changed_at + 1.year if tag.ends_with?(":Jahr")
+              live_to = topic.updated_at + 1.month if tag.ends_with?(":Monat")
+              live_to = topic.updated_at + 1.year if tag.ends_with?(":Jahr")
               live_to = Date.today + 10.years if tag.ends_with?(":immer")
             end
           end
