@@ -110,7 +110,7 @@ namespace :szas do
 
         show_info
         if testrun
-          puts "  # ... Thema wrüde versteckt"
+          puts "  # ... Thema würde versteckt"
         else
           @topic.update!(visible: false, archived: true) unless testrun
           puts "  ! ... Thema wurde versteckt"
