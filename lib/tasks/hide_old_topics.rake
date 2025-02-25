@@ -97,8 +97,8 @@ namespace :szas do
           next
         end
 
-        # topic.update!(visible: false, archived: true)
-        puts "  ! ... verstecke Thema"
+        topic.update!(visible: false, archived: true)
+        puts "  ! ... Thema wurde versteckt"
       rescue => e
         puts "Fehler beim Verarbeiten des Themas '#{topic.title}' (ID: #{topic.id}): #{e.message}"
       end
