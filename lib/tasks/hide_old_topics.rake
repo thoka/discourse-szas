@@ -90,6 +90,7 @@ namespace :szas do
         end
 
         if live_to && Date.today < live_to
+          show_info
           puts "   ... hat Ablaufdatum (#{live_to}) nicht erreicht."
           if (!@topic.visible || @topic.archived)
             show_info
