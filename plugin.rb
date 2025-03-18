@@ -150,3 +150,121 @@ after_initialize do
     Email::Styles.prepend DedupCSS
   end
 end
+
+if false
+  register_asset "stylesheets/vertretungsplan.scss"
+  register_svg_icon "counterclockwise_arrows_button"
+  register_svg_icon "superhero"
+  register_svg_icon "x"
+
+  after_initialize do
+    require_relative "lib/vertretungsplan/cached_api_poller"
+
+    module ::Vertretungsplan
+      class Engine < ::Rails::Engine
+        engine_name "vertretungsplan"
+        isolate_namespace Vertretungsplan
+      end
+
+      Vertretungsplan::Engine.routes.draw { get "/vertretungsplan" => "vertretungsplan#index" }
+
+      Discourse::Application.routes.append { mount Vertretungsplan::Engine, at: "/" }
+
+      require_dependency "application_controller"
+
+      class VertretungsplanController < ::ApplicationController
+        # before_action :ensure_logged_in
+
+        def index
+          data = {
+            updated_at: "2021-09-10T12:00:00",
+            data: [
+              {
+                date: "2021-09-10",
+                day_of_week: "Montag",
+                lg: "123blauA",
+                lessons: [
+                  {
+                    icon: "superhero",
+                    time: "8:00 - 10:00",
+                    subject: "Mathe",
+                    teacher: "Herr Müller",
+                    room: "A123",
+                  },
+                  {
+                    icon: "x",
+                    time: "10:00 - 12:00",
+                    subject: "Deutsch",
+                    teacher: "Frau Schmidt",
+                    room: "A124",
+                  },
+                ],
+              },
+              {
+                date: "2021-09-11",
+                day_of_week: "Dienstag",
+                lg: "123blauA",
+                lessons: [
+                  {
+                    icon: "x",
+                    time: "8:00 - 10:00",
+                    subject: "Mathe",
+                    teacher: "Herr Müller",
+                    room: "A123",
+                  },
+                  {
+                    icon: "x",
+                    time: "10:00 - 12:00",
+                    subject: "Deutsch",
+                    teacher: "Frau Schmidt",
+                    room: "A124",
+                  },
+                ],
+              },
+            ],
+          }
+
+          render json: data
+        end
+      end
+
+      # class Engine < ::Rails::Engine
+      #   isolate_namespace Vertretungsplan
+
+      #   config.after_initialize do
+      #     Discourse::Application.routes.append do
+      #       mount ::Vertretungsplan::Engine, at: "/vertretungsplan"
+      #     end
+      #   end
+      # end
+    end
+  end
+end
+
+### CHANGE EMAIL API
+
+after_initialize do
+  require_relative "app/controllers/admin_change_email/change_controller"
+
+  module ::AdminChangeEmail
+    class Engine < ::Rails::Engine
+      engine_name "admin_change_email"
+      isolate_namespace AdminChangeEmail
+    end
+
+    AdminChangeEmail::Engine.routes.draw do
+      #scope module: "admin_change_email", constraints: AdminConstraint.new do
+      #scope "/admin/plugins" do
+      get "/admin/change-email" => "change#echo"
+      post "/admin/change-email" => "change#update", :constraints => { format: :json }
+      #end
+      #end
+      # get "admin-change-email" => "change#echo"
+      # post "admin-change-email" => "change#echo", :constraints => { format: :json }
+    end
+
+    Discourse::Application.routes.append do
+      mount AdminChangeEmail::Engine, at: "/" #, constraints: AdminConstraint.new
+    end
+  end
+end
