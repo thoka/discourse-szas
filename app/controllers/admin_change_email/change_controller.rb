@@ -34,21 +34,30 @@ module ::AdminChangeEmail
       ensure_admin
       ensure_params
 
-      UserEmail.where(user_id: @user.id).update_all(primary: false)
+      # primary=false: eine Sekundaeradresse eintragen, ohne die
+      # bestehende Primaeradresse anzufassen. Vorgabe true haelt das
+      # bisherige Verhalten unveraendert (der Parameter ist neu).
+      primary = ActiveModel::Type::Boolean.new.cast(params.fetch(:primary, true))
 
       existing_mail = UserEmail.find_by(email: @email)
-      if existing_mail.present?
-        if existing_mail.user_id != @user.id
-          raise "email already exists"
-        else
-          existing_mail.update(primary: true)
-          render json: success_json
-          return
-        end
+      if existing_mail.present? && existing_mail.user_id != @user.id
+        raise "email already exists"
       end
 
-      puts "🔵🔵User emails: #{@user.emails}"
-      UserEmail.new(email: @email, user_id: @user.id, primary: true).save!
+      if primary
+        UserEmail.where(user_id: @user.id).update_all(primary: false)
+        if existing_mail.present?
+          existing_mail.update!(primary: true)
+        else
+          UserEmail.create!(email: @email, user_id: @user.id, primary: true)
+        end
+      elsif existing_mail.blank?
+        # Ist die Adresse schon irgendeine Adresse dieses Kontos (primaer
+        # oder sekundaer), bleibt sie unangetastet - "als Sekundaeradresse
+        # eintragen" stuft keine bestehende Primaeradresse herab.
+        UserEmail.create!(email: @email, user_id: @user.id, primary: false)
+      end
+
       render json: success_json
     rescue => e
       render json: { error: e.message }, status: 422
