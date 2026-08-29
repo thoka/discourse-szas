@@ -7,6 +7,8 @@
 
 require "onebox"
 
+require_relative "lib/shared_topics"
+
 class Onebox::Engine::VimeoOnebox
   private
 
