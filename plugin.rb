@@ -254,7 +254,23 @@ after_initialize do
     TopicQuery.prepend(
       Module.new do
         define_method(:default_results) do |options = {}|
-          category_id = @options[:category] ? get_category_id(options[:category] || @options[:category]) : nil
+          raw_category = options[:category] || @options[:category]
+          category_id = raw_category ? get_category_id(raw_category) : nil
+
+          # Die Kategorie "An mich" ist eine Sicht: statt der Topics der
+          # Kategorie (es gibt keine) zeigt sie die direkt an die
+          # Person adressierten PMs. Anonym bleibt sie leer.
+          if category_id && category_id == ::SzasSharedTopics.an_mich_category_id
+            if @user
+              return super(options.merge(category: nil, include_pms: true)).where(
+                "topics.id IN (SELECT topic_id FROM topic_allowed_users WHERE user_id = ?)",
+                @user.id,
+              )
+            else
+              return super(options).none
+            end
+          end
+
           shared_ids =
             if category_id && @user
               ::SzasSharedTopics.shared_topic_ids_for_category(category_id)
@@ -271,7 +287,21 @@ after_initialize do
         end
       end,
     )
+
+    # In "An mich" schreiben ist sinnlos: ein echtes Topic dort wäre in
+    # seiner eigenen Liste unsichtbar, weil die Liste nur PMs zeigt.
+    Guardian.prepend(
+      Module.new do
+        def can_create_topic?(category_id)
+          return false if category_id.to_i == ::SzasSharedTopics.an_mich_category_id
+
+          super
+        end
+      end,
+    )
   end
+
+  ::SzasSharedTopics.ensure_an_mich_category
 
   module ::SzasMessages
     # Die virtuelle Kategorie "an mich": alle PMs der angemeldeten
