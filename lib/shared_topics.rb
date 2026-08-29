@@ -21,11 +21,43 @@
 
 module ::SzasSharedTopics
   CATEGORY_FIELD = "szas_shared_category_id"
+  AN_MICH_SLUG = "an-mich"
 
   def self.shared_topic_ids_for_category(category_id)
     TopicCustomField
       .where(name: CATEGORY_FIELD, value: category_id.to_s)
       .order("topic_custom_fields.topic_id")
       .pluck(:topic_id)
+  end
+
+  # Die Kategorie "An mich" ist ein echter Category-Record mit
+  # gepatchter Listenansicht: sie zeigt jeder Person ihre direkt an sie
+  # adressierten PMs. Es gibt sie genau einmal; position 0 sortiert sie
+  # in Kategorien-Übersicht und Sidebar nach vorn.
+  def self.ensure_an_mich_category
+    category = Category.find_by(slug: AN_MICH_SLUG)
+    if category.nil?
+      category =
+        Category.create!(
+          name: "An mich",
+          slug: AN_MICH_SLUG,
+          user: Discourse.system_user,
+          position: 0,
+        )
+    end
+    # position -1: vor "uncategorized" (0) und allen Bereichen, damit
+    # "An mich" in Übersicht und Sidebar zuerst steht
+    category.update_column(:position, -1) if category.position != -1
+    category
+  rescue ActiveRecord::StatementInvalid, PG::Error
+    # waehrend Migrationen steht die Tabelle noch nicht - der Bootlauf
+    # danach legt sie an
+    nil
+  end
+
+  def self.an_mich_category_id
+    # bewusst ohne Cache: Tests setzen die DB zurueck, ein gemerkter
+    # Identifier wuerde dort alt werden
+    Category.where(slug: AN_MICH_SLUG).pick(:id)
   end
 end
