@@ -7,8 +7,6 @@
 
 require "onebox"
 
-require_relative "lib/shared_topics"
-
 class Onebox::Engine::VimeoOnebox
   private
 
@@ -232,5 +230,57 @@ after_initialize do
     Discourse::Application.routes.append do
       mount AdminChangeEmail::Engine, at: "/" #, constraints: AdminConstraint.new
     end
+  end
+end
+
+### PRIVATE THEMEN IN KATEGORIEN (Paket 65, Phase A1)
+
+after_initialize do
+  require_relative "lib/shared_topics"
+
+  register_topic_custom_field_type(::SzasSharedTopics::CATEGORY_FIELD, :integer)
+
+  DiscoursePluginRegistry.register_modifier(self, :topic_query_create_list_topics) do |topics, options, topic_query|
+    category_id = topic_query.options[:category_id]
+    next topics if category_id.blank?
+    next topics if topic_query.user.blank?
+
+    shared_topic_ids = ::SzasSharedTopics.shared_topic_ids_for_category(category_id)
+    next topics if shared_topic_ids.blank?
+
+    # Der Kategorien-Scope (topics) und der PM-Scope stammen beide aus
+    # default_results und sind deshalb strukturgleich - .or erlaubt die
+    # Komposition, Limit/Order/Pinning fallen in einen Ausdruck.
+    pm_scope =
+      topic_query
+        .default_results(options.merge(category: nil, include_pms: true))
+        .where(id: shared_topic_ids)
+
+    begin
+      topics.or(pm_scope)
+    rescue ArgumentError
+      # .or verlangt identische Order-Klauseln; eine Kategorie mit
+      # eigener sort_order bricht die Komposition. Degradation: die
+      # Kategorie zeigt dann nur ihre regulären Topics.
+      topics
+    end
+  end
+
+  module ::SzasMessages
+    class SzasMessagesController < ::ApplicationController
+      requires_login
+
+      def index
+        list = TopicQuery.new(current_user, include_pms: true, per_page: 30).list_latest
+
+        render_serialized(
+          topics: TopicListSerializer.new(list, scope: guardian, root: false).as_json,
+        )
+      end
+    end
+  end
+
+  Discourse::Application.routes.append do
+    get "/szas/nachrichten-an-mich" => "szas_messages/szas_messages#index"
   end
 end
