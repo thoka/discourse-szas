@@ -240,30 +240,37 @@ after_initialize do
 
   register_topic_custom_field_type(::SzasSharedTopics::CATEGORY_FIELD, :integer)
 
-  DiscoursePluginRegistry.register_modifier(self, :topic_query_create_list_topics) do |topics, options, topic_query|
-    category_id = topic_query.options[:category_id]
-    next topics if category_id.blank?
-    next topics if topic_query.user.blank?
+  # Klass-Patch (Regel im Ausgangspapier: ohne, wenn es geht; mit, wenn
+  # nicht). Der Versuch, die Union über den Modifier
+  # :topic_query_create_list_topics zu komponieren, scheitert
+  # strukturell: .or verlangt strukturgleiche Relations, und der
+  # Kategorien-Scope trägt aus remove_muted den category_users-Join,
+  # den ein separat gebauter PM-Scope nie hat. Der Patch verbreitert
+  # stattdessen die Kategorie-Klausel IN default_results selbst und
+  # überlässt alles Weitere (Pin, Order, Paginierung) dem Core.
+  # Die Specs in spec/queries/ tragen das Verhalten; ein Core-Umbau
+  # an default_results schlägt dort sichtbar an.
+  reloadable_patch do |plugin|
+    TopicQuery.prepend(
+      Module.new do
+        define_method(:default_results) do |options = {}|
+          category_id = @options[:category] ? get_category_id(options[:category] || @options[:category]) : nil
+          shared_ids =
+            if category_id && @user
+              ::SzasSharedTopics.shared_topic_ids_for_category(category_id)
+            end
 
-    shared_topic_ids = ::SzasSharedTopics.shared_topic_ids_for_category(category_id)
-    next topics if shared_topic_ids.blank?
-
-    # Der Kategorien-Scope (topics) und der PM-Scope stammen beide aus
-    # default_results und sind deshalb strukturgleich - .or erlaubt die
-    # Komposition, Limit/Order/Pinning fallen in einen Ausdruck.
-    pm_scope =
-      topic_query
-        .default_results(options.merge(category: nil, include_pms: true))
-        .where(id: shared_topic_ids)
-
-    begin
-      topics.or(pm_scope)
-    rescue ArgumentError
-      # .or verlangt identische Order-Klauseln; eine Kategorie mit
-      # eigener sort_order bricht die Komposition. Degradation: die
-      # Kategorie zeigt dann nur ihre regulären Topics.
-      topics
-    end
+          if shared_ids.present?
+            category_ids = Category.subcategory_ids(category_id) + [category_id]
+            super(options.merge(category: nil, include_pms: true)).where(
+              "topics.category_id IN (?) OR topics.id IN (?)", category_ids, shared_ids,
+            )
+          else
+            super(options)
+          end
+        end
+      end,
+    )
   end
 
   module ::SzasMessages
@@ -274,7 +281,9 @@ after_initialize do
         list = TopicQuery.new(current_user, include_pms: true, per_page: 30).list_latest
 
         render_serialized(
-          topics: TopicListSerializer.new(list, scope: guardian, root: false).as_json,
+          list.topics,
+          BasicTopicSerializer,
+          root: false,
         )
       end
     end
