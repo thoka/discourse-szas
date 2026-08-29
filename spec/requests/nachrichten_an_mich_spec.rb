@@ -14,20 +14,23 @@ RSpec.describe "Nachrichten an mich" do
     )
   end
 
+  def listed_ids
+    response.parsed_body.map { |topic| topic["id"] }
+  end
+
   it "listet für angemeldete Nutzer genau die PMs, an denen sie beteiligt sind" do
     sign_in(user)
 
     get "/szas/nachrichten-an-mich.json"
 
     expect(response.status).to eq(200)
-    listed = response.parsed_body["topics"].map { |topic| topic["id"] }
-    expect(listed).to contain_exactly(pm.id)
+    expect(listed_ids).to contain_exactly(pm.id)
   end
 
-  it "endet für anonyme Zugriffe mit 404" do
+  it "weist anonyme Zugriffe ab" do
     get "/szas/nachrichten-an-mich.json"
 
-    expect(response.status).to eq(404)
+    expect(response.status).to eq(403)
   end
 
   it "listet PMs anderer nicht, auch wenn sie existieren" do
@@ -35,7 +38,7 @@ RSpec.describe "Nachrichten an mich" do
 
     get "/szas/nachrichten-an-mich.json"
 
-    listed = response.parsed_body["topics"].map { |topic| topic["id"] }
-    expect(listed).not_to include(pm.id)
+    expect(response.status).to eq(200)
+    expect(listed_ids).not_to include(pm.id)
   end
 end
