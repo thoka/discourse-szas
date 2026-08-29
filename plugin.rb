@@ -274,22 +274,119 @@ after_initialize do
   end
 
   module ::SzasMessages
+    # Die virtuelle Kategorie "an mich": alle PMs der angemeldeten
+    # Person, in Boxen gegliedert. "direkt" sind PMs, die allein an sie
+    # adressiert sind; je Gruppe, die sie auf ein PM bekommt, gibt es
+    # eine Box "group:<id>". Beide Unterscheidungen stehen in den
+    # Teilnehmerschafts-Tabellen (topic_allowed_users /
+    # topic_allowed_groups) - es wird nichts Extraes gespeichert.
     class SzasMessagesController < ::ApplicationController
       requires_login
 
+      MAX_PER_PAGE = 30
+
       def index
-        list = TopicQuery.new(current_user, include_pms: true, per_page: 30).list_latest
+        scope = filtered_scope
+        topics =
+          scope
+            .order("topics.bumped_at DESC")
+            .limit(MAX_PER_PAGE)
 
         render_serialized(
-          list.topics,
+          topics,
           BasicTopicSerializer,
           root: false,
         )
+      end
+
+      # Die Boxen mit Zählern, fuer die Navigation (Baum "an mich" mit
+      # "direct" und den Gruppen darunter).
+      def boxes
+        render_json_dump(user_boxes)
+      end
+
+      private
+
+      def filtered_scope
+        case params[:box]
+        when "direct"
+          direct_scope
+        when /\Agroup:(\d+)\z/
+          group_scope(Regexp.last_match(1).to_i)
+        else
+          Topic.private_messages_for_user(current_user)
+        end
+      end
+
+      def direct_scope
+        # "direkt" heißt: an mich adressiert - ein PM, das zusätzlich
+        # eine Gruppe als Empfängerin hat, bleibt hier drin und taucht
+        # zugleich in der Box dieser Gruppe auf (Sichten, keine Kopien).
+        Topic.private_messages_for_user(current_user).where(
+          "topics.id IN (SELECT topic_id FROM topic_allowed_users WHERE user_id = ?)",
+          current_user.id,
+        )
+      end
+
+      def group_scope(group_id)
+        GroupUser.exists?(group_id: group_id, user_id: current_user.id) or
+          raise Discourse::NotFound
+
+        Topic
+          .private_messages_for_user(current_user)
+          .where(
+            "topics.id IN (
+              SELECT tg.topic_id FROM topic_allowed_groups tg
+              JOIN group_users gu ON gu.group_id = tg.group_id
+              WHERE gu.user_id = ? AND tg.group_id = ?
+            )",
+            current_user.id,
+            group_id,
+          )
+      end
+
+      def user_boxes
+        groups =
+          Group
+            .joins(:group_users)
+            .where(group_users: { user_id: current_user.id })
+            .order(:full_name, :name)
+            .pluck(:id, :name)
+
+        base = Topic.private_messages_for_user(current_user)
+        direct_count =
+          base
+            .where(
+              "topics.id IN (SELECT topic_id FROM topic_allowed_users WHERE user_id = ?)",
+              current_user.id,
+            )
+            .count
+
+        [
+          { key: "direct", name: "Direkt", count: direct_count },
+          *groups.map do |group_id, name|
+            {
+              key: "group:#{group_id}",
+              name: name,
+              count:
+                base.where(
+                  "topics.id IN (
+                    SELECT tg.topic_id FROM topic_allowed_groups tg
+                    JOIN group_users gu ON gu.group_id = tg.group_id
+                    WHERE gu.user_id = ? AND tg.group_id = ?
+                  )",
+                  current_user.id,
+                  group_id,
+                ).count,
+            }
+          end,
+        ]
       end
     end
   end
 
   Discourse::Application.routes.append do
-    get "/szas/nachrichten-an-mich" => "szas_messages/szas_messages#index"
+    get "/szas/my-messages" => "szas_messages/szas_messages#index"
+    get "/szas/my-messages/boxes" => "szas_messages/szas_messages#boxes"
   end
 end
